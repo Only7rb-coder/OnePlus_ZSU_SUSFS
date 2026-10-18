@@ -2,11 +2,11 @@
 
 OnePlus/Oppo/Realme device-specific kernel build automation based on [huangdihd/OnePlus_BakaSU_SUSFS](https://github.com/huangdihd/OnePlus_BakaSU_SUSFS) and WildKernels. The build integrates the actual [ZSU kernel](https://github.com/Only7rb-coder/zsu), not a BakaSU kernel with a renamed APK.
 
-**Status: integration under validation. A retained configuration is not a tested-device claim.** Initial releases must remain experimental until the exact kernel boots successfully on its target firmware. No phone has been flashed or boot-tested by this task.
+**Initial release published:** [v2.3.0-zsu-r1](https://github.com/Only7rb-coder/OnePlus_ZSU_SUSFS/releases/tag/v2.3.0-zsu-r1), built for **OnePlus 12 / OOS16 / kernel 6.1.118**. [Full source-build and release run](https://github.com/Only7rb-coder/OnePlus_ZSU_SUSFS/actions/runs/39176753694) succeeded. Only this initial target has been full-image compile-validated; retaining 158 upstream configurations is not a tested-device claim. The release is experimental: no phone has been flashed or hardware boot-tested by this task.
 
 ## ZSU-only manager policy
 
-The kernel is pinned to ZSU commit `1044ca19e7a9ef5bed1e4e28ed8f56ac368616a4`, corresponding to the `v1.4.10` release source. Manager authentication uses the ZSU APK-v2 signing certificate SHA-256 `ba1159a5819dec96cdcb2498bef73170b0ba1735c12139bde1b7677bf7c5c2ab`, certificate DER size `0x318`, and package `com.zsu.zsu`. Debug mode and manager bypass are disabled.
+The kernel is pinned to ZSU commit `1044ca19e7a9ef5bed1e4e28ed8f56ac368616a4`, paired with the regular `v1.4.10` manager. Manager authentication uses the ZSU APK-v2 signing certificate SHA-256 `ba1159a5819dec96cdcb2498bef73170b0ba1735c12139bde1b7677bf7c5c2ab`, certificate DER size `0x318`, and package `com.zsu.zsu`. Debug mode and manager bypass are disabled.
 
 Use the **regular** `ZSU_*-release.apk` from [ZSU releases](https://github.com/Only7rb-coder/zsu/releases/tag/v1.4.10). The spoofed/random-package APK is intentionally excluded. Generic KernelSU, KernelSU-Next and BakaSU managers are not accepted. This is manager authentication, not DRM: an app that is already root-authorized can still execute privileged operations.
 
