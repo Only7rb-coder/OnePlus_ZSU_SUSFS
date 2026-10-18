@@ -1,0 +1,19 @@
+{
+  "upstream_build_commit": "3f6f1193f4576799a09bf81c8923c7dbb3720272",
+  "zsu_repository": "Only7rb-coder/zsu",
+  "zsu_commit": "1044ca19e7a9ef5bed1e4e28ed8f56ac368616a4",
+  "zsu_manager_release": "v1.4.10",
+  "zsu_manager_package": "com.zsu.zsu",
+  "manager_certificate_size": "0x318",
+  "manager_certificate_sha256": "ba1159a5819dec96cdcb2498bef73170b0ba1735c12139bde1b7677bf7c5c2ab",
+  "susfs_version": "v2.3.0",
+  "susfs_commits": {
+    "android12-5.10": "c06d5f8ef2b53d04c5e1c6b86dc3076f1e0e9f33",
+    "android13-5.15": "054b2432ef4c4aec4bb4cd65a532332798ee8c04",
+    "android14-6.1": "5369359dbd10f6dd8cbdd59d1df7b788b29b168c",
+    "android15-6.6": "afb39173a6cc9f188093e7c8b71b709fc40f6565",
+    "android16-6.12": "bd2756895e557f339b6304b57e4de131868ea429"
+  },
+  "kernel_patches_commit": "8fc499c0d147fdb6f79a2f15651213ab938ffd8c",
+  "toolchain_mirror_repository": "huangdihd/OnePlus_BakaSU_SUSFS"
+}

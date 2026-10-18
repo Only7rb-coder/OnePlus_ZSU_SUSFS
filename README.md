@@ -1,153 +1,49 @@
-<div align="center">
+# OnePlus ZSU + SUSFS
 
-# 🔥 Huangdihd's Fork of Wild Kernels for OnePlus (Oppo/Realme)
+OnePlus/Oppo/Realme device-specific kernel build automation based on [huangdihd/OnePlus_BakaSU_SUSFS](https://github.com/huangdihd/OnePlus_BakaSU_SUSFS) and WildKernels. The build integrates the actual [ZSU kernel](https://github.com/Only7rb-coder/zsu), not a BakaSU kernel with a renamed APK.
 
-[![KernelSU](https://img.shields.io/badge/KernelSU-Supported-green)](https://kernelsu.org/)
-[![BakaSU](https://img.shields.io/badge/BakaSU-Supported-green)](https://bakasu.org)
-[![SUSFS](https://img.shields.io/badge/SUSFS-Integrated-orange)](https://gitlab.com/simonpunk/susfs4ksu)
-[![OnePlusOSS Tracking Status](https://img.shields.io/badge/OnePlusOSS--Tracker-active-green)](https://github.com/WildKernels/OnePlus_KernelSU_SUSFS/blob/status-page/README.md)
+**Status: integration under validation. A retained configuration is not a tested-device claim.** Initial releases must remain experimental until the exact kernel boots successfully on its target firmware. No phone has been flashed or boot-tested by this task.
 
-</div>
+## ZSU-only manager policy
 
----
+The kernel is pinned to ZSU commit `1044ca19e7a9ef5bed1e4e28ed8f56ac368616a4`, corresponding to the `v1.4.10` release source. Manager authentication uses the ZSU APK-v2 signing certificate SHA-256 `ba1159a5819dec96cdcb2498bef73170b0ba1735c12139bde1b7677bf7c5c2ab`, certificate DER size `0x318`, and package `com.zsu.zsu`. Debug mode and manager bypass are disabled.
 
-## ⚠️ Disclaimer
+Use the **regular** `ZSU_*-release.apk` from [ZSU releases](https://github.com/Only7rb-coder/zsu/releases/tag/v1.4.10). The spoofed/random-package APK is intentionally excluded. Generic KernelSU, KernelSU-Next and BakaSU managers are not accepted. This is manager authentication, not DRM: an app that is already root-authorized can still execute privileged operations.
 
-Flashing this kernel will not void your warranty, but there is always a risk of bricking your device. Please make sure to:
-- 💾 Back up your data
-- 🧠 Understand the risks before proceeding
+No signing key is needed or included in this repository. The certificate fingerprint is public verification material. Build setup performs a sparse checkout of only ZSU `kernel/` and `uapi/`; it does not use the upstream setup script, which otherwise fetches generic KernelSU-Next.
 
-- I am **not responsible** for bricked devices, damaged hardware, or any issues that arise from using this kernel.
+## Features and compatibility
 
-- **Please** do thorough research and fully understand the features added in this kernel before flashing it!
+The upstream device configurations and pinned OnePlus manifests are retained. Their enabled features include SUSFS, BBG, HMBIRD SCX where configured, BBR/BBRv3, CAKE/PIE, LTO, optimization patches, TTL, IP sets/IPv6 NAT, TMPFS xattrs/POSIX ACL, Unicode bypass fixes, Droidspaces and NTSync. Support depends on the selected configuration and successful patch application/compilation.
 
-- By flashing this kernel, **YOU** are choosing to make these modifications. If something goes wrong, **do not blame me**!
+SUSFS is pinned to v2.3.0 with a dedicated bridge for ZSU's modern kernel layout and control ABI. It must not be enabled merely by setting defconfig flags: the ZSU-side Kconfig, lifecycle, permission and control handlers also need the integration patch. Builds fail closed if that patch is absent or critical configuration symbols disappear during `olddefconfig`.
 
-<div align="center">
-  
-# **🚨 Proceed at your own risk!**
+See [sources.lock.json](sources.lock.json) for source identities and [compatibility.md](compatibility.md) for the inherited compatibility notes. Confirm the exact model, ROM version and `adb shell uname -r` before selecting a kernel. A matching major/minor version alone is not sufficient.
 
-</div>
+## Build and publish
 
----
+Use **Actions → Build and Release OnePlus ZSU Kernels → Run workflow**. Set `config_path` for one exact firmware/kernel target. An empty path builds the `selector` group. Start with one target; broad groups can contain many independent builds.
 
-## 🔧 Available Kernels
+```bash
+gh workflow run build-kernel-release.yml \
+  -R Only7rb-coder/OnePlus_ZSU_SUSFS \
+  -f config_path=configs/oos16/OP12-6.1.118.json \
+  -f make_release=true \
+  -f release_tag=v2.3.0-zsu-r1 \
+  -f prerelease=true
 
-<div align="center">
+gh run list -R Only7rb-coder/OnePlus_ZSU_SUSFS
+gh run watch RUN_ID -R Only7rb-coder/OnePlus_ZSU_SUSFS --exit-status
+```
 
-| Kernel | Repository | Status |
-|--------|------------|--------|
-| 🏗️ **GKI** | [GKI_KernelSU_SUSFS](https://github.com/WildKernels/GKI_KernelSU_SUSFS) | ✅ Active |
-| 👑 **Sultan** | [Sultan_KernelSU_SUSFS](https://github.com/WildKernels/Sultan_KernelSU_SUSFS) | ✅ Active |
-| 📱 **OnePlus/Oppo/Realme** | [OnePlus_KernelSU_SUSFS](https://github.com/WildKernels/OnePlus_KernelSU_SUSFS) | ✅ Active |
-| 📱 **Samsung** | [Samsung_KernelSU_SUSFS](https://github.com/WildKernels/Samsung_KernelSU_SUSFS) | ✅ Active |
-</div>
+The command's OP12 configuration is a **pipeline example**, not a recommendation for your phone. The release job runs only if every selected build succeeds. It checks ZIP CRCs, required AnyKernel3 files and the ARM64 Image header, then publishes fresh kernels with SHA256SUMS and source locks. It will not overwrite an existing tag or publish renamed upstream binaries.
 
----
+The public upstream toolchain-cache release is reused to avoid duplicating multi-gigabyte toolchains. Missing mirror assets fail the build. No Telegram secrets or scheduled jobs are configured. Actions compilation is not evidence of boot compatibility.
 
-## 🔗 Additional Resources
+## Source and licenses
 
-- 🩹 [Kernel Patches](https://github.com/WildKernels/kernel_patches)
-- ⚡ [Kernel Flasher](https://github.com/fatalcoder524/KernelFlasher)
+Upstream build snapshot: `3f6f1193f4576799a09bf81c8923c7dbb3720272`. The original upstream README is preserved at [docs/UPSTREAM_README.md](docs/UPSTREAM_README.md). Credits remain with huangdihd, WildKernels, OnePlusOSS, KernelSU/KernelSU-Next, ZSU, simonpunk/SUSFS, AnyKernel3, BBG and the individual patch authors.
 
----
+ZSU's `kernel/` is GPL-2.0-only; its other components are GPL-3.0-or-later. Kernel trees, SUSFS and external patches retain their own licenses. The upstream workflow repository has no repository-wide license file in this snapshot; this project does not invent or override one. Source revisions, OnePlus manifests and local integration patches are available here, and linked upstream projects provide their corresponding source and license notices. Preserve applicable notices when redistributing.
 
-## 📱 Device Compatibility
-
-- Please verify the device compatibility before flashing here: [Compatibility_Info](https://github.com/WildKernels/OnePlus_KernelSU_SUSFS/blob/main/compatibility.md). 
-
----
-
-## 📱 OnePlusOSS Repositories Tracking
-
-- 📊 **Live Dashboard**: [OnePlus Repos Tracking & Changes](https://github.com/WildKernels/OnePlus_KernelSU_SUSFS/blob/status-page/README.md)
-- ⏱️ **Update Frequency**: Every 2 hours (Automated)
----
-
-## ✨ Features
-
-- 🔐 **BakaSU**: Kernel-based Android Root Solution,forked from sukisu
-- 🥷 **SUSFS**: An addon root hiding kernel patches and userspace module for KernelSU
-- 🛡️ **BBG**: LSM-based Baseband Guard security to protect critical device partitions. abl/efisp can be added to whitelist for efisp exploit devices.
-- 🛠️ **HMBIRD SCX**: Scheduler extensions for SM8750/MT6991 devices
-- 🖧 **BBRv1**: Improved TCP congestion control
-- 🖧 **BBRv3**: Improved TCP congestion control
-- 🚦 **CAKE and PIE qdisc Support**: Better Net Schedulers
-- ✅ **LTO**: Link Time Optimisation enabled
-- 🚀 **Optimisation patches**: Memory, I/O, CPU scheduler, network and other general tunings
-- 🌐 **TTL Target Support**: Network packet manipulation
-- 🧱 **IP Set & IPv6 NAT Support**: Advanced firewall capabilities and IPv6 NAT Support
-- ⚡️ **TMPFS XATTR / POSIX ACL**: Extended TMPFS support for meta modules and Mountify
-- </> **Unicode Bypass Fix**: Prevent path traversal and other detections using non-printable Unicode codepoints [Experimental]
-- 🖥️ **Droidspaces Support**: Support Portable Linux containers to run full Linux environments.
-- 🔃 **NTSync**: Provide high-performance, low-latency synchronization primitives compatible with the Windows NT kernel API
-
----
-
-## 📋 Installation Instructions
-
-- **KernelSU**: Developed by [tiann](https://github.com/tiann/KernelSU).
-- **BakaSU**: Developed by [BakaSU Team](https://github.com/Baka-SU/BakaSU)
-- **Magic-KSU**: Developed by [5ec1cff](https://github.com/5ec1cff/KernelSU).  
-- **SUSFS**: Developed by [simonpunk](https://gitlab.com/simonpunk/susfs4ksu.git).
-- **SUSFS Module**: Developed by [sidex15](https://github.com/sidex15).
-- **Sultan Kernels**: Developed by [kerneltoast](https://github.com/kerneltoast).
-For GKI installation, please follow the official guide:
-
-📖 **[KernelSU Installation Guide](https://kernelsu.org/guide/installation.html)**
-
-You can also find Installation instructions in the release notes.
-
----
-
-## 🌟 Special Thanks
-
-**These amazing people help make this project possible! ❤️**
-
-<div align="center">
-
-
-| 🔧 **Project** | 👨‍💻 **Developer** | 🔗 **Link** |
-|:---------------:|:----------------:|:-----------:|
-| **KernelSU** | tiann | [![GitHub](https://img.shields.io/badge/GitHub-tiann-blue?style=flat-square&logo=github)](https://github.com/tiann/KernelSU) |
-| **BakaSU** | bakasu | [![GitHub](https://img.shields.io/badge/GitHub-bakasu-blue?style=flat-square&logo=github)](https://github.com/Baka-SU/BakaSU) |
-| **Magic-KSU** | 5ec1cff | [![GitHub](https://img.shields.io/badge/GitHub-5ec1cff-blue?style=flat-square&logo=github)](https://github.com/5ec1cff/KernelSU) |
-| **SUSFS** | simonpunk | [![GitLab](https://img.shields.io/badge/GitLab-simonpunk-orange?style=flat-square&logo=gitlab)](https://gitlab.com/simonpunk/susfs4ksu.git) |
-| **SUSFS Module** | sidex15 | [![GitHub](https://img.shields.io/badge/GitHub-sidex15-blue?style=flat-square&logo=github)](https://github.com/sidex15) |
-| **Sultan Kernels** | kerneltoast | [![GitHub](https://img.shields.io/badge/GitHub-kerneltoast-blue?style=flat-square&logo=github)](https://github.com/kerneltoast) |
-| **Baseband Guard** | vc-teahouse | [![GitHub](https://img.shields.io/badge/GitHub-vc--teahouse-blue?style=flat-square&logo=github)](https://github.com/vc-teahouse/Baseband-guard.git) |
-| **Droidspaces** | ravindu644 | [![GitHub](https://img.shields.io/badge/GitHub-ravindu644-blue?style=flat-square&logo=github)](https://github.com/ravindu644/Droidspaces-OSS.git) |
-
-</div>
-
-*If you have contributed and are not listed here, please remind me!* 🙏
-
----
-
-## 💬 Support
-
-If you encounter any issues or need help, feel free to:
-- 🐛 Open an issue in this repository
-- 💬 Reach out to me directly
-
----
-
-## 📱 Connect With Us
-
-<div align="center">
-  
-[![Telegram](https://img.shields.io/badge/Telegram-huangdihd-blue?logo=telegram)](https://t.me/huangdihd)
-[![Telegram Group](https://img.shields.io/badge/Telegram-huangdihd_wildkernel-blue?logo=telegram)](https://t.me/huangdihd_wildkernel)
-
-</div>
-
----
-
-## 💝 Donations
-
-Any and all donations are appreciated!
-
-PayPal: [paypal.me/fatalcoder524](https://paypal.me/fatalcoder524)
-
-DM on Telegram for UPI donations!
-
+Flashing modified kernels can cause data loss or an unbootable device. Back up your data and original boot partitions, understand the recovery procedure, and never flash an artifact for a different model/firmware.

@@ -1,0 +1,24 @@
+name: Validate ZSU build pipeline
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m compileall -q scripts
+      - run: python3 scripts/test_pipeline.py
+      - name: Check integration patch against locked source
+        run: |
+          set -euo pipefail
+          sha=$(jq -r .zsu_commit sources.lock.json)
+          git init "$RUNNER_TEMP/zsu"
+          git -C "$RUNNER_TEMP/zsu" remote add origin https://github.com/Only7rb-coder/zsu.git
+          git -C "$RUNNER_TEMP/zsu" fetch --depth=1 origin "$sha"
+          git -C "$RUNNER_TEMP/zsu" checkout --detach FETCH_HEAD
+          git -C "$RUNNER_TEMP/zsu" apply --check "$GITHUB_WORKSPACE/patches/zsu-susfs-v2.3.0.patch"

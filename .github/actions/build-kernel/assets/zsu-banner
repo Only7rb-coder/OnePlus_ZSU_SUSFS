@@ -1,0 +1,3 @@
+OnePlus ZSU + SUSFS
+ZSU-signed manager only
+Experimental: verify device, firmware and KMI before flashing.

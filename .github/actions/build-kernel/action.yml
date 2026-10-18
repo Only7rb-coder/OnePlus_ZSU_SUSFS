@@ -1,46 +1,35 @@
-name: 'Build OnePlus Kernel with KernelSU / BakaSU'
-description: 'GitHub Action to build OnePlus kernels with original KernelSU or BakaSU, and SUSFS integration, optimized for performance and reliability'
+name: 'Build OnePlus Kernel with ZSU'
+description: 'Upstream OnePlus build features with a pinned ZSU kernel and manager certificate'
 inputs:
   op_config_json:
     description: 'JSON string containing full device config'
     required: true
-    type: string
   ksu_type:
     description: 'Select KSU Type'
     required: true
-    type: choice
-    options:
-      - KSU
-      - BakaSU
   ksu_branch_or_hash:
     description: 'KSU branch or commit hash (empty = auto-detect by ksu_type)'
     required: false
-    type: string
     default: ""
   susfs_commit_hash_or_branch:
     description: 'SUSFS branch or commit hash (empty = auto-detect by kernel version)'
     required: false
-    type: string
     default: ""
   build_timestamp:
     description: 'Custom kernel build timestamp shown in uname -a (e.g. "Tue Feb 10 10:01:02 UTC 2026"). Leave empty to use the current build time.'
     required: false
-    type: string
     default: ''
   optimize_level:
     description: 'Compiler optimization level (O2 or O3)'
     required: false
-    type: string
     default: O2
   clean:
     description: 'Force clean build without ccache acceleration'
     required: false
-    type: boolean
     default: false
   debug:
     description: 'Enable dumping debug related artifacts'
     required: false
-    type: boolean
     default: false
   github_token:
     description: 'GitHub Token'
@@ -101,7 +90,7 @@ runs:
       uses: actions/checkout@v6
       with:
         repository: ${{ env.ACTION_REPO }}
-        ref: ${{ env.ACTION_REF }}
+        ref: ${{ github.sha }}
         path: action-source
         fetch-depth: 1
 
@@ -319,7 +308,7 @@ runs:
         git config --global feature.manyFiles true
         git config --global core.fsmonitor true
         git config --global pack.sparse true
-        git config --global http.sslVerify false
+        git config --global http.sslVerify true
 
     - name: Sync Kernel Source
       id: sync-kernel-source
@@ -873,6 +862,8 @@ runs:
         }
         
         retry_clone "https://github.com/WildKernels/kernel_patches.git" "main" "1"
+        git -C kernel_patches fetch --depth=1 origin 8fc499c0d147fdb6f79a2f15651213ab938ffd8c
+        git -C kernel_patches checkout --detach 8fc499c0d147fdb6f79a2f15651213ab938ffd8c
         
         if [ "${{ env.OP_SUSFS }}" = true ]; then
           echo "Using SUSFS branch/commit: $SUSFS_BRANCH"
@@ -896,96 +887,13 @@ runs:
         echo "::endgroup::"
 
 
-    - name: Add KernelSU
+    - name: Integrate pinned ZSU kernel and certificate policy
       shell: bash
-      if: ${{ inputs.ksu_type == 'KSU' }}
+      env:
+        ZSU_REF: ${{ inputs.ksu_branch_or_hash }}
       run: |
         set -euo pipefail
-        echo "::group::Add KernelSU"
-        cd "$KERNEL_PLATFORM_FOLDER"
-        echo "Adding KernelSU..."
-        KSU_INPUT="${{ inputs.ksu_branch_or_hash }}"
-        if [ -z "$KSU_INPUT" ]; then
-          curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-        else
-          curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s "$KSU_INPUT"
-        fi
-        
-        git submodule update --init --recursive
-        cd KernelSU/kernel
-        BASE_VERSION=30000
-        KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" $BASE_VERSION)
-        
-        if grep -q "DKSU_VERSION=16" Makefile; then
-          sed -i "s/DKSU_VERSION=16/DKSU_VERSION=${KSU_VERSION}/" Makefile
-        fi
-        
-        if [ -f ksu.c ]; then
-          echo "ℹ️ Found ksu.c, applying legacy stackprotector patch..."
-          sed -i 's/#if defined(CONFIG_STACKPROTECTOR) && (defined(CONFIG_ARM64) && !defined(CONFIG_STACKPROTECTOR_PER_TASK))/#if 0/' ksu.c
-        elif [ -f core.c ]; then
-          echo "ℹ️ Found core.c, applying stackprotector patch to new structure..."
-          sed -i 's/#if defined(CONFIG_STACKPROTECTOR) && (defined(CONFIG_ARM64) && !defined(CONFIG_STACKPROTECTOR_PER_TASK))/#if 0/' core.c
-        else
-          echo "ℹ️ Modern KSU structure detected, skipping legacy stackprotector patch."
-        fi
-        
-        if [[ "$KSU_VERSION" -gt 32427 ]] && [[ "${{ env.KERNEL_VER }}" == "6.12" ]]; then
-          sed -i 's|ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include|ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include -I$(KSU_KERNEL_DIR)/include/uapi|' Kbuild
-          sed -i 's|$(src)|$(abspath $(src))|' Kbuild
-          sed -i 's|$(srctree)/$(src)|$(abspath $(srctree)/$(src))|' Kbuild
-        fi
-        
-        echo "NEED_HOOKS=false" >> $GITHUB_ENV
-        
-        cd ..
-        KSU_COMMIT_SHA=$(git rev-parse HEAD)
-        echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> $GITHUB_ENV
-        
-        echo "Add KSU Configuration Settings"
-        cat >> "$COMMON_KERNEL_FOLDER/arch/arm64/configs/gki_defconfig" <<EOF
-        CONFIG_KSU=y
-        EOF
-        
-        echo "KSU" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
-        echo "$KSU_VERSION" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
-        echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-        echo "KernelSU Version: $KSU_VERSION"
-        echo "✅ KernelSU added (commit: ${KSU_COMMIT_SHA:0:8})"
-        echo "::endgroup::"
-
-    - name: Add BakaSU (The Sukisaku Project)
-      shell: bash
-      if: ${{ inputs.ksu_type == 'BakaSU' }}
-      run: |
-        set -euo pipefail
-        echo "::group::Add BakaSU"
-        cd "$KERNEL_PLATFORM_FOLDER"
-        echo "Adding BakaSU..."
-        
-        if [ "${{ inputs.ksu_branch_or_hash }}" = "" ]; then
-          curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash -
-        else
-          curl --fail --location --proto '=https' -LSs "https://raw.githubusercontent.com/Baka-SU/BakaSU/main/kernel/setup.sh" | bash -s "${{ inputs.ksu_branch_or_hash }}"
-        fi
-        
-        cd KernelSU
-        
-        BASE_VERSION=30700
-        KSU_VERSION=$(expr $(/usr/bin/git rev-list --count HEAD) "+" $BASE_VERSION)
-        
-        KSU_COMMIT_SHA=$(git rev-parse HEAD)
-        echo "KSU_COMMIT_SHA=$KSU_COMMIT_SHA" >> $GITHUB_ENV
-        
-        cd ..
-        
-        echo "BakaSU" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
-        echo "$KSU_VERSION" >> "${ARTIFACTS_FOLDER}/${OP_MODEL}_${OP_OS_VERSION}.txt"
-        echo "KSUVER=$KSU_VERSION" >> $GITHUB_ENV
-        
-        echo "BakaSU Version: $KSU_VERSION"
-        echo "✅ BakaSU added (commit: ${KSU_COMMIT_SHA:0:8})"
-        echo "::endgroup::"
+        python3 "$GITHUB_WORKSPACE/scripts/integrate_zsu.py"
 
     - name: Apply SUSFS Patches
       shell: bash
@@ -1014,37 +922,12 @@ runs:
           echo "NEED_HOOKS=false" >> $GITHUB_ENV
         fi
         
-        case "$susfs_version" in
-          "v1.5.8")
-            if [ "${{ inputs.ksu_type }}" = "KSU" ]; then
-              cd "$KSU_FOLDER"
-              patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
-            else
-              echo "ℹ️ Skipping KernelSU folder patch for BakaSU"
-            fi
-            ;;
-          "v1.5.9"|"v1.5.10"|"v1.5.11"|"v1.5.12"|"v2.0.0"|"v2.1.0")
-            if [ "${{ inputs.ksu_type }}" = "KSU" ]; then
-              cd "$KSU_FOLDER"
-              patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
-            else
-              echo "ℹ️ Skipping KernelSU folder patch for BakaSU"
-            fi
-            ;;
-          "v2.2.0"|"v2.3.0")
-            if [ "${{ inputs.ksu_type }}" = "KSU" ]; then
-              cd "$KSU_FOLDER"
-              patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch" || true
-            else
-              echo "ℹ️ Skipping KernelSU folder patch for BakaSU"
-            fi
-            ;;
-          *)
-            echo "::error::Unsupported SUSFS version: $susfs_version"
-            exit 1
-            ;;
-        esac
-        
+        if [ "$susfs_version" != "v2.3.0" ]; then
+          echo "::error::ZSU bridge is pinned to SUSFS v2.3.0; refusing an unvalidated ABI"
+          exit 1
+        fi
+        echo "ZSU-side SUSFS bridge already applied by integrate_zsu.py"
+
         cd "$COMMON_KERNEL_FOLDER"
         if [ "${{ env.ANDROID_VER }}" = "android15" ] && [ "${{ env.KERNEL_VER }}" = "6.6" ]; then
           if ! grep -qxF '#include <trace/hooks/fs.h>' ./fs/namespace.c; then
@@ -1123,8 +1006,11 @@ runs:
         fi
         
         echo "Applying SUSFS patch..."
+        python3 "$GITHUB_WORKSPACE/scripts/filter_susfs_common_patch.py" \
+          "$SUSFS_FOLDER/kernel_patches/50_add_susfs_in_${{ env.SUSFS_KERNEL_BRANCH }}.patch" \
+          "$SUSFS_FOLDER/kernel_patches/zsu-common.patch"
         # Attempt to apply the patch; enter error handling if it doesn't apply cleanly
-        if ! patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/50_add_susfs_in_${{ env.SUSFS_KERNEL_BRANCH }}.patch"; then
+        if ! patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/zsu-common.patch"; then
           echo "Patch reported errors. Checking for known mm/memory.c Hunk #1 context mismatch..."
           
           # If mm/memory.c.rej exists and is caused by the SUSFS macro insertion failure
@@ -1144,15 +1030,6 @@ runs:
             exit 1
           else
             echo "Patch applied successfully with manual fallback for mm/memory.c!"
-          fi
-        fi
-
-        if [ "${{ inputs.ksu_type }}" = "BakaSU" ]; then
-          exec_file="./fs/exec.c"
-          sed -i '/extern int ksu_install_su_fd(void);/d; /^[[:space:]]*ksu_install_su_fd();$/d' "$exec_file"
-          if grep -Fq 'ksu_install_su_fd' "$exec_file"; then
-            echo "::error::Failed to remove unsupported BakaSU ksu_install_su_fd() call"
-            exit 1
           fi
         fi
 
@@ -2042,36 +1919,6 @@ runs:
         CONFIG_RUST=y
         EOF
     
-    - name: Resolve KSU Symbol Dependencies
-      shell: bash
-      run: |
-        set -euo pipefail
-        echo "::group::Resolve KSU Symbol Dependencies"
-        echo "Injecting fallback weak symbol into KernelSU resolver..."
-        RESOLVER=$(find "$KSU_FOLDER" -name "symbol_resolver.c" | head -n 1)
-        if [ -n "$RESOLVER" ]; then
-          if ! grep -q "__weak kallsyms_on_each_symbol" "$RESOLVER"; then
-            KERNEL_VER="${{ env.KERNEL_VER }}"
-            
-            # Use appropriate function signature based on kernel version
-            if [[ "$KERNEL_VER" == "5.15" ]]; then
-              echo "Applying weak symbol signature for kernel 5.15..."
-              cat >> "$RESOLVER" << 'EOF'
-
-        /* Fallback for missing symbols (Kernel < 6.4) */
-        int __attribute__((weak)) kallsyms_on_each_symbol(int (*fn)(void *, const char *, struct module *, unsigned long), void *data) {
-            return 0;
-        }
-        EOF
-            fi
-            echo "✅ Weak symbol injected successfully."
-          else
-            echo "✅ Weak symbol already exists in resolver."
-          fi
-        else
-          echo "⚠️ symbol_resolver.c not found, skipping weak symbol injection."
-        fi
-
     - name: Save Build Metadata
       id: save_metadata
       shell: bash
@@ -2221,7 +2068,7 @@ runs:
         
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" gki_defconfig
         
-        LOCAL_LOCALVERSION="${CUSTOM_LOCALVERSION:--OP-BAKASU}"
+        LOCAL_LOCALVERSION="${CUSTOM_LOCALVERSION:--OP-ZSU}"
         if [ -n "${LOCAL_LOCALVERSION:-}" ]; then
           scripts/config --file "$OUT/.config" --set-str LOCALVERSION "${LOCAL_LOCALVERSION}"
           scripts/config --file "$OUT/.config" -d LOCALVERSION_AUTO || true
@@ -2256,6 +2103,16 @@ runs:
         
         
         make LD="$COMMON_KERNEL_FOLDER/ld-wrapper" HOSTLD="$COMMON_KERNEL_FOLDER/ld-wrapper" O="$OUT" olddefconfig
+        grep -qx 'CONFIG_KSU=y' "$OUT/.config"
+        if [ "$OP_SUSFS" = "true" ]; then
+          grep -qx 'CONFIG_KSU_SUSFS=y' "$OUT/.config"
+          grep -qx 'CONFIG_KSU_SUSFS_SUS_PATH=y' "$OUT/.config"
+          grep -qx 'CONFIG_KSU_SUSFS_SPOOF_UNAME=y' "$OUT/.config"
+        fi
+        if grep -qx 'CONFIG_KSU_DISABLE_MANAGER=y' "$OUT/.config"; then
+          echo "::error::Manager authentication was disabled"
+          exit 1
+        fi
         
         KCFLAGS="$KCFLAGS -Wno-error -pipe ${KCFLAGS_EXTRA}"
         KCPPFLAGS="$KCPPFLAGS -DCONFIG_OPTIMIZE_INLINING"
@@ -2492,8 +2349,8 @@ runs:
         
         sed -i 's/do.check_boot_version=.*/do.check_boot_version=1/' anykernel.sh
 
-        if [ "${{ inputs.ksu_type }}" = "BakaSU" ]; then
-          cp "$GITHUB_ACTION_PATH/assets/bakasu-banner" banner
+        if [ "${{ inputs.ksu_type }}" = "ZSU" ]; then
+          cp "$GITHUB_ACTION_PATH/assets/zsu-banner" banner
         fi
 
         if [ "$OP_BBG" = "true" ]; then
@@ -2559,9 +2416,9 @@ runs:
           echo "Kernel Uname: ${{ env.KERNEL_UNAME }}"
           echo "Build User: ${{ env.BUILD_USER }}"
           echo "Build Host: ${{ env.BUILD_HOST }}"
-          if [ "${{ inputs.ksu_type }}" = "BakaSU" ]; then
-            echo "BakaSU Version: ${KSUVER:-unknown}"
-            echo "BakaSU commit SHA: ${KSU_SHA:-unknown}"
+          if [ "${{ inputs.ksu_type }}" = "ZSU" ]; then
+            echo "ZSU Version: ${KSUVER:-unknown}"
+            echo "ZSU commit SHA: ${KSU_SHA:-unknown}"
           else
             echo "KSU Version: ${KSUVER:-unknown}"
             echo "KSU commit SHA: ${KSU_SHA:-unknown}"
@@ -2609,15 +2466,15 @@ runs:
           echo "| **Build User** | ${{ env.BUILD_USER }} |"
           echo "| **Build Host** | ${{ env.BUILD_HOST }} |"
           
-          if [ "${{ inputs.ksu_type }}" = "BakaSU" ]; then
-            echo "| **BakaSU Version** | ${KSUVER:-unknown} |"
+          if [ "${{ inputs.ksu_type }}" = "ZSU" ]; then
+            echo "| **ZSU Version** | ${KSUVER:-unknown} |"
           else
             echo "| **KSU Version** | ${KSUVER:-unknown} |"
           fi
           
           if [ "$KSU_SHA" != "unknown" ]; then
-            if [ "${{ inputs.ksu_type }}" = "BakaSU" ]; then
-              echo "| **BakaSU Commit** | [\`${KSU_SHA:0:8}\`](https://github.com/Baka-SU/BakaSU/commit/$KSU_SHA) |"
+            if [ "${{ inputs.ksu_type }}" = "ZSU" ]; then
+              echo "| **ZSU Commit** | [\`${KSU_SHA:0:8}\`](https://github.com/Only7rb-coder/zsu/commit/$KSU_SHA) |"
             else
               echo "| **KSU Commit** | [\`${KSU_SHA:0:8}\`](https://github.com/tiann/KernelSU/commit/$KSU_SHA) |"
             fi
@@ -2672,7 +2529,7 @@ runs:
 
     - name: Upload Debug Artifacts
       if: ${{ always() && !cancelled() && inputs.debug == 'true' }}
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ env.DEBUG_ZIP_NAME }}
         path: ${{ env.DEBUG_ARTIFACTS_FOLDER }}
@@ -2681,39 +2538,19 @@ runs:
 
     - name: Upload Artifacts
       if: success() && steps.create_zip.conclusion == 'success'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ env.ZIP_NAME }}
         path: ${{ env.ARTIFACTS_FOLDER }}/${{ env.ZIP_NAME }}
-        archive: false
         compression-level: 0
         retention-days: 90
 
     - name: Upload ccache log
       if: success() && inputs.debug == 'true' && steps.build_kernel_step.conclusion == 'success'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v4
       with:
         name: "${{ env.OP_MODEL }}_${{ env.OP_OS_VERSION }}_${{ env.KERNEL_FULL_VER }}_ccache.log"
         path: ${{ env.CCACHE_LOGFILE }}
-        archive: false
         compression-level: 0
         retention-days: 90
 
-    - name: 📥 Checkout Code
-      uses: actions/checkout@v6
-      if: always() && steps.build_kernel_step.conclusion == 'success'
-      with:
-        path: main-source
-        fetch-depth: 1
-
-    - name: Save ccache cache
-      if: always() && steps.build_kernel_step.conclusion == 'success'
-      uses: ./action-source/.github/actions/cache/save
-      with:
-        cache_path: ${{ env.CCACHE_DIR }}
-        cache_key: ${{ inputs.ksu_type }}-v3-${{ env.OP_MODEL }}-${{ env.OP_OS_VERSION }}-${{ env.KERNEL_FULL_VER }}-${{ env.CLANG_VERSION_SHORT }}
-        cache_bucket: "ccache-cache"
-        debug: ${{ inputs.debug }}
-        github_token: ${{ inputs.github_token }}
-        working_dir: "./main-source"
-        compression_level: 6
