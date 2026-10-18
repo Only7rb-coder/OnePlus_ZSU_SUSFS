@@ -20,6 +20,7 @@ def load(name):
 
 selection = load('select_configs')
 release = load('prepare_release')
+common_filter = load('filter_susfs_common_patch')
 
 
 class PipelineTests(unittest.TestCase):
@@ -85,6 +86,28 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('KSU_MANAGER_PACKAGE', integration)
         self.assertIn('CONFIG_KSU_DEBUG is not set', integration)
         self.assertIn('CONFIG_KSU_DISABLE_MANAGER is not set', integration)
+
+    def test_common_filter_preserves_susfs_declarations(self):
+        patch = '\n'.join([
+            'diff --git a/fs/stat.c b/fs/stat.c',
+            '--- a/fs/stat.c', '+++ b/fs/stat.c', '@@ -1,3 +1,12 @@',
+            ' #include <linux/fs.h>', '+#ifdef CONFIG_KSU_SUSFS',
+            '+#include <linux/susfs_def.h>', '+#endif',
+            '+#ifdef CONFIG_KSU_SUSFS',
+            '+extern int ksu_handle_stat(int *fd);', '+#endif',
+            '+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT',
+            '+extern bool susfs_is_inode_sus_kstat(struct inode *inode);', '+#endif',
+            ' ', ' void original(void);',
+            '@@ -10,1 +19,4 @@', ' original();',
+            '+#ifdef CONFIG_KSU_SUSFS',
+            '+if (is_su_session) ksu_handle_post_execveat_sucompat();', '+#endif', '',
+        ])
+        filtered = common_filter.transform(patch)
+        self.assertIn('#include <linux/susfs_def.h>', filtered)
+        self.assertIn('susfs_is_inode_sus_kstat', filtered)
+        self.assertNotIn('ksu_handle_stat', filtered)
+        self.assertNotIn('is_su_session', filtered)
+        self.assertNotIn('ksu_handle_post_execveat_sucompat', filtered)
 
     def test_bridge_present(self):
         patch = ROOT / 'patches/zsu-susfs-v2.3.0.patch'
