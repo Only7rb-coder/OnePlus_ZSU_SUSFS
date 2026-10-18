@@ -109,6 +109,21 @@ class PipelineTests(unittest.TestCase):
         self.assertNotIn('is_su_session', filtered)
         self.assertNotIn('ksu_handle_post_execveat_sucompat', filtered)
 
+    def test_zsu_owns_native_selinux_hiding(self):
+        patch = ''
+        for name, symbol in [('hooks.c', 'fake_state'), ('selinuxfs.c', 'fake_status'), ('avc.c', 'susfs_ksu_sid')]:
+            patch += '\n'.join([
+                f'diff --git a/security/selinux/{name} b/security/selinux/{name}',
+                f'--- a/security/selinux/{name}', f'+++ b/security/selinux/{name}',
+                '@@ -1,1 +1,2 @@', ' existing;', f'+extern int {symbol};', '',
+            ])
+        filtered = common_filter.transform(patch)
+        self.assertNotIn('fake_state', filtered)
+        self.assertNotIn('fake_status', filtered)
+        self.assertNotIn('a/security/selinux/hooks.c', filtered)
+        self.assertNotIn('a/security/selinux/selinuxfs.c', filtered)
+        self.assertIn('susfs_ksu_sid', filtered)
+
     def test_bridge_present(self):
         patch = ROOT / 'patches/zsu-susfs-v2.3.0.patch'
         self.assertTrue(patch.is_file(), 'SUSFS bridge must be implemented before building')

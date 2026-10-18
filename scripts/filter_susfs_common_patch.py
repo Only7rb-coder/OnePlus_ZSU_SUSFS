@@ -11,6 +11,11 @@ DROP = re.compile(
 )
 HEADER = re.compile(r'^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)\n$')
 
+# ZSU already hooks these native SELinux interfaces. The SUSFS tiann port
+# references its own fake state/status globals, which are private in ZSU.
+# Retain ZSU's implementation rather than exposing or duplicating that state.
+NATIVE_SELINUX_FILES = {'security/selinux/hooks.c', 'security/selinux/selinuxfs.c'}
+
 
 def salvage_declarations(body):
     """Keep independent SUSFS headers/prototypes in the mixed stat header hunk."""
@@ -46,9 +51,14 @@ def transform(text):
     output = []
     index = 0
     dropped = 0
+    skip_file = False
     while index < len(lines):
+        if lines[index].startswith('diff --git '):
+            filename = lines[index].split()[2][2:]
+            skip_file = filename in NATIVE_SELINUX_FILES
         if not lines[index].startswith('@@ '):
-            output.append(lines[index])
+            if not skip_file:
+                output.append(lines[index])
             index += 1
             continue
         header = lines[index]
@@ -57,6 +67,9 @@ def transform(text):
         while index < len(lines) and not lines[index].startswith(('@@ ', 'diff --git ')):
             body.append(lines[index])
             index += 1
+        if skip_file:
+            dropped += 1
+            continue
         additions = ''.join(x[1:] for x in body if x.startswith('+') and not x.startswith('+++'))
         if not DROP.search(additions):
             output.extend([header, *body])
