@@ -21,6 +21,7 @@ def load(name):
 selection = load('select_configs')
 release = load('prepare_release')
 common_filter = load('filter_susfs_common_patch')
+integration = load('integrate_zsu')
 
 
 class PipelineTests(unittest.TestCase):
@@ -123,6 +124,24 @@ class PipelineTests(unittest.TestCase):
         self.assertNotIn('a/security/selinux/hooks.c', filtered)
         self.assertNotIn('a/security/selinux/selinuxfs.c', filtered)
         self.assertIn('susfs_ksu_sid', filtered)
+
+    def test_mediatek_and_direct_kernel_links(self):
+        for symbolic_common in (False, True):
+            with self.subTest(symbolic_common=symbolic_common), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                platform = root / 'kernel_platform'
+                platform.mkdir()
+                physical = root / 'kernel-5.10' if symbolic_common else platform / 'common'
+                (physical / 'drivers').mkdir(parents=True)
+                common = platform / 'common'
+                if symbolic_common:
+                    common.symlink_to('../kernel-5.10')
+                repo = platform / 'KernelSU'
+                (repo / 'kernel').mkdir(parents=True)
+                (repo / 'kernel/Kconfig').write_text('config KSU\n    bool "ZSU"\n')
+                drivers = integration.link_kernel(common, repo)
+                self.assertTrue((drivers / 'kernelsu/Kconfig').is_file())
+                self.assertEqual((drivers / 'kernelsu').resolve(), repo / 'kernel')
 
     def test_bridge_present(self):
         patch = ROOT / 'patches/zsu-susfs-v2.3.0.patch'

@@ -116,14 +116,21 @@ jobs:
           clean: false
           debug: ${{ inputs.debug }}
           github_token: ${{ github.token }}
+      - name: Collect failure diagnostics without traversing vendor symlinks
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p failure-diagnostics
+          for file in "$COMMON_KERNEL_FOLDER/build.log" "$COMMON_KERNEL_FOLDER/out/.config"; do
+            if [ -f "$file" ]; then cp "$file" failure-diagnostics/; fi
+          done
       - name: Upload failure log and generated configuration
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: failure-${{ matrix.model }}-${{ matrix.os_version }}
-          path: |
-            **/common/build.log
-            **/common/out/.config
+          path: failure-diagnostics/
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 7
 

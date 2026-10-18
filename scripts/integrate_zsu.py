@@ -10,6 +10,20 @@ def run(*args, cwd=None):
     return subprocess.run(args, cwd=cwd, check=True, text=True, capture_output=False)
 
 
+def link_kernel(common, repo):
+    drivers = common.resolve(strict=True) / 'drivers'
+    link = drivers / 'kernelsu'
+    if link.is_symlink():
+        link.unlink()
+    if link.exists():
+        raise SystemExit('Existing non-symlink drivers/kernelsu requires review')
+    target = (repo / 'kernel').resolve(strict=True)
+    link.symlink_to(os.path.relpath(target, drivers))
+    if not (link / 'Kconfig').is_file():
+        raise SystemExit('ZSU kernel symlink failed to resolve to Kconfig')
+    return drivers
+
+
 def main():
     workspace = Path(os.environ['GITHUB_WORKSPACE'])
     lock = json.loads((workspace / 'sources.lock.json').read_text())
@@ -17,8 +31,8 @@ def main():
     commit = lock['zsu_commit']
     if requested and requested != commit:
         raise SystemExit('Refusing an unvalidated ZSU revision; update sources.lock.json and port tests first')
-    platform = Path(os.environ['KERNEL_PLATFORM_FOLDER'])
-    common = Path(os.environ['COMMON_KERNEL_FOLDER'])
+    platform = Path(os.environ['KERNEL_PLATFORM_FOLDER']).resolve(strict=True)
+    common = Path(os.environ['COMMON_KERNEL_FOLDER']).resolve(strict=True)
     repo = platform / 'KernelSU'
     repo.mkdir(exist_ok=False)
     run('git', 'init', str(repo))
@@ -50,13 +64,7 @@ KSU_NEXT_MANAGER_HASH := {lock['manager_certificate_sha256']}
             raise SystemExit('Missing audited ZSU SUSFS bridge; refusing to produce mislabeled artifacts')
         run('git', 'apply', '--check', str(patch), cwd=repo)
         run('git', 'apply', str(patch), cwd=repo)
-    drivers = common / 'drivers'
-    link = drivers / 'kernelsu'
-    if link.is_symlink():
-        link.unlink()
-    if link.exists():
-        raise SystemExit('Existing non-symlink drivers/kernelsu requires review')
-    link.symlink_to(os.path.relpath(repo / 'kernel', drivers))
+    drivers = link_kernel(common, repo)
     for file, entry in [
         (drivers / 'Makefile', 'obj-$(CONFIG_KSU) += kernelsu/'),
         (drivers / 'Kconfig', 'source "drivers/kernelsu/Kconfig"'),
