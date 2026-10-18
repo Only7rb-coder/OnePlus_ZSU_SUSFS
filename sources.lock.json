@@ -15,5 +15,12 @@
     "android16-6.12": "bd2756895e557f339b6304b57e4de131868ea429"
   },
   "kernel_patches_commit": "8fc499c0d147fdb6f79a2f15651213ab938ffd8c",
-  "toolchain_mirror_repository": "huangdihd/OnePlus_BakaSU_SUSFS"
+  "toolchain_mirror_repository": "huangdihd/OnePlus_BakaSU_SUSFS",
+  "susfs_archive_sha256": {
+    "054b2432ef4c4aec4bb4cd65a532332798ee8c04": "2a49ce80c5815b48ca6cec603d84d622c8e5728eabf75b8c9a76f01e5b40fbf5",
+    "5369359dbd10f6dd8cbdd59d1df7b788b29b168c": "70eb348d65c556a8e626e3a7c5b2134076b46725db64f8ed38e1b388101d9d2f",
+    "afb39173a6cc9f188093e7c8b71b709fc40f6565": "b3609c6bd67988d46b4df6e1643182338e75c7425663b162be3a434558afe8f8",
+    "bd2756895e557f339b6304b57e4de131868ea429": "304b085c67548c0cb3457cbef28d51803265550b668fb0cd436c2252ad40b3f6",
+    "c06d5f8ef2b53d04c5e1c6b86dc3076f1e0e9f33": "0a6cab47565dcea3633cb87b2e4514bdc5cee4868c7052a1712a3e7f49e29481"
+  }
 }

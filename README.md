@@ -38,7 +38,7 @@ gh run watch RUN_ID -R Only7rb-coder/OnePlus_ZSU_SUSFS --exit-status
 
 The command's OP12 configuration is a **pipeline example**, not a recommendation for your phone. The release job runs only if every selected build succeeds. It checks ZIP CRCs, required AnyKernel3 files and the ARM64 Image header, then publishes fresh kernels with SHA256SUMS and source locks. It will not overwrite an existing tag or publish renamed upstream binaries.
 
-The public upstream toolchain-cache release is reused to avoid duplicating multi-gigabyte toolchains. Missing mirror assets fail the build. No Telegram secrets or scheduled jobs are configured. Actions compilation is not evidence of boot compatibility.
+Checksum-pinned SUSFS source archives, including their upstream license, are mirrored under `vendor/susfs-archives/` because GitLab returned HTTP 403 to the GitHub runner. `sources.lock.json` records every archive hash. The public upstream toolchain-cache release is reused to avoid duplicating multi-gigabyte toolchains. Missing mirror assets fail the build. No Telegram secrets or scheduled jobs are configured. Actions compilation is not evidence of boot compatibility.
 
 ## Source and licenses
 

@@ -867,10 +867,7 @@ runs:
         
         if [ "${{ env.OP_SUSFS }}" = true ]; then
           echo "Using SUSFS branch/commit: $SUSFS_BRANCH"
-          if ! retry_fetch_archive "https://gitlab.com/simonpunk/susfs4ksu.git" "$SUSFS_BRANCH"; then
-            echo "::error::Failed to fetch SUSFS archive after multiple attempts"
-            exit 1
-          fi
+          python3 "$GITHUB_WORKSPACE/scripts/extract_susfs.py" "$SUSFS_BRANCH"
           echo "SUSFS_COMMIT_SHA=$SUSFS_BRANCH" >> $GITHUB_ENV
         fi
         echo "✅ Dependencies cloned"
@@ -2553,4 +2550,3 @@ runs:
         path: ${{ env.CCACHE_LOGFILE }}
         compression-level: 0
         retention-days: 90
-
