@@ -13,8 +13,8 @@ import os
 from pathlib import Path, PurePosixPath
 import shutil
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
-from urllib.request import Request, urlopen
+from urllib.parse import quote, urlencode, urlparse
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 import zipfile
 
 
@@ -37,6 +37,10 @@ def github_json(url, token):
 
 
 def github_bytes(url, token):
+    class NoRedirect(HTTPRedirectHandler):
+        def redirect_request(self, request, fp, code, message, headers, newurl):
+            return None
+
     request = Request(url, headers={
         'Accept': 'application/vnd.github+json',
         'Authorization': f'Bearer {token}',
@@ -44,10 +48,22 @@ def github_bytes(url, token):
         'User-Agent': 'zsu-kernel-release-downloader',
     })
     try:
-        with urlopen(request, timeout=180) as response:
-            return response.read()
+        try:
+            with build_opener(NoRedirect()).open(request, timeout=180) as response:
+                return response.read()
+        except HTTPError as redirect:
+            if redirect.code not in (301, 302, 303, 307, 308):
+                raise
+            location = redirect.headers.get('Location', '')
+            if urlparse(location).scheme != 'https':
+                raise DownloadError('Artifact API returned a non-HTTPS redirect')
+            # The signed storage URL authenticates itself. Forwarding GH_TOKEN
+            # breaks Azure downloads and needlessly exposes it to the CDN.
+            with urlopen(Request(location, headers={'User-Agent': 'zsu-kernel-release-downloader'}), timeout=180) as response:
+                return response.read()
     except (HTTPError, URLError, TimeoutError) as exc:
-        raise DownloadError(f'GitHub artifact download failed: {url}: {exc}') from exc
+        status = getattr(exc, 'code', type(exc).__name__)
+        raise DownloadError(f'GitHub artifact download failed: {url}; status={status}') from None
 
 
 def list_artifacts(repository, run_id, token):
