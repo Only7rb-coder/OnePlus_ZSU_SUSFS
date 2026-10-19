@@ -1006,6 +1006,13 @@ runs:
         python3 "$GITHUB_WORKSPACE/scripts/filter_susfs_common_patch.py" \
           "$SUSFS_FOLDER/kernel_patches/50_add_susfs_in_${{ env.SUSFS_KERNEL_BRANCH }}.patch" \
           "$SUSFS_FOLDER/kernel_patches/zsu-common.patch"
+        if [ "${{ env.ANDROID_VER }}" = "android16" ] && [ "${{ env.KERNEL_VER }}" = "6.12" ]; then
+          python3 "$GITHUB_WORKSPACE/scripts/adapt_susfs_612.py" \
+            --source-root "$COMMON_KERNEL_FOLDER" \
+            --input "$SUSFS_FOLDER/kernel_patches/zsu-common.patch" \
+            --output "$SUSFS_FOLDER/kernel_patches/zsu-common-612.patch"
+          mv "$SUSFS_FOLDER/kernel_patches/zsu-common-612.patch" "$SUSFS_FOLDER/kernel_patches/zsu-common.patch"
+        fi
         # Attempt to apply the patch; enter error handling if it doesn't apply cleanly
         if ! patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/zsu-common.patch"; then
           echo "Patch reported errors. Checking for known mm/memory.c Hunk #1 context mismatch..."
