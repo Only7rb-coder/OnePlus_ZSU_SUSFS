@@ -289,25 +289,26 @@ def adapt_patch(text: str, source_root: Path | None = None) -> str:
 
 
 def _identify_profile(source_root: Path) -> dict:
-    try:
-        commit = subprocess.check_output(["git", "-C", str(source_root), "rev-parse", "HEAD"], text=True, stderr=subprocess.STDOUT).strip()
-    except (OSError, subprocess.CalledProcessError) as exc:
-        raise ValueError("source tree must be a git checkout at an approved 6.12 commit") from exc
-    profile = PROFILES.get(commit)
-    if profile is None:
-        raise ValueError(f"source commit/layout is not approved: {commit}")
-    for relative, digest in (("fs/exec.c", profile["exec"]), ("fs/proc/task_mmu.c", profile["task"])):
-        path = source_root / relative
-        actual = hashlib.sha256(path.read_bytes()).hexdigest()
-        if actual != digest:
-            raise ValueError(f"source layout fingerprint mismatch for {relative}: {actual} != {digest}")
-    return profile
+    # Source synchronization extracts archives, so this directory need not
+    # have a .git. git rev-parse would then report the enclosing pipeline HEAD.
+    # Require the exact reviewed source blobs, never that unrelated Git HEAD.
+    actual = {
+        key: hashlib.sha256((source_root / relative).read_bytes()).hexdigest()
+        for key, relative in (("exec", "fs/exec.c"), ("task", "fs/proc/task_mmu.c"))
+    }
+    matches = [profile for profile in PROFILES.values()
+               if profile["exec"] == actual["exec"] and profile["task"] == actual["task"]]
+    if not matches:
+        raise ValueError(f"source layout fingerprint mismatch: {actual}")
+    return matches[0]
 
 
 def verify_source(source_root: Path, expected_commit: str | None = None) -> None:
     profile = _identify_profile(source_root.resolve(strict=True))
-    if expected_commit is not None and expected_commit != next(k for k, v in PROFILES.items() if v is profile):
-        raise ValueError(f"source commit mismatch: {expected_commit}")
+    if expected_commit is not None:
+        requested = PROFILES.get(expected_commit)
+        if requested is None or (profile["exec"], profile["task"]) != (requested["exec"], requested["task"]):
+            raise ValueError(f"source fingerprint does not match reviewed commit: {expected_commit}")
 
 
 def main() -> None:

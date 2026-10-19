@@ -66,6 +66,14 @@ class Susfs612Validation(unittest.TestCase):
                 self.assertNotIn("FAILED", dry_log.read_text())
                 self.assertNotIn("FAILED", apply_log.read_text())
 
+    def test_archive_extracted_source_requires_no_git_metadata(self):
+        d = VALIDATION / "ace6t"
+        with tempfile.TemporaryDirectory(prefix="susfs612-archive-") as td:
+            tree = Path(td) / "source"
+            shutil.copytree(d / "source", tree, ignore=shutil.ignore_patterns(".git"))
+            adapted = self._adapt_text((d / "filtered.patch").read_text(), tree)
+            self.assertGreater(adapted.count("SUSFS_IS_INODE_SUS_MAP"), 3)
+
     def test_negative_unexpected_task_hunk_rejected(self):
         d = VALIDATION / "ace6ultra"
         bad = (d / "filtered.patch").read_text().replace(
