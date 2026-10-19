@@ -9,6 +9,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
 import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
@@ -157,9 +158,16 @@ def _job_records(api_root, run_id, token, by_name, label):
 
 
 def _success_prefixes(records):
-    return [f'AK3_{item["model"]}_{item["os_version"]}_{item["android_version"]}-{item["kernel_version"]}.'
-            for entry in records if entry['conclusion'] == 'success'
-            for item in [entry['config']]]
+    result = []
+    for entry in records:
+        if entry['conclusion'] != 'success':
+            continue
+        item = entry['config']
+        match = re.search(r'-(\d+\.\d+\.\d+)$', item['model'])
+        model = item['model'][:match.start()] if match else item['model']
+        version = match[1] + '_' if match else item['kernel_version'] + '.'
+        result.append(f'AK3_{model}_{item["os_version"]}_{item["android_version"]}-{version}')
+    return result
 
 
 def _check_run(repository, run_id, token, api_root, label):

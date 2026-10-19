@@ -175,6 +175,26 @@ class RetryReleaseTests(unittest.TestCase):
                 downloader.download_parent('owner/repo', '1', 'token', Path(folder), 1,
                                            ['AK3_OP15_OOS16_android16-6.12.'])
 
+    def test_version_suffix_matches_reference_zip_naming(self):
+        records = [{'conclusion': 'success', 'config': {
+            'model': model, 'os_version': 'OOS16', 'android_version': 'android14',
+            'kernel_version': '6.1'}} for model in ('OP12', 'OP12-6.1.118')]
+        prefixes = selection._success_prefixes(records)
+        self.assertEqual(prefixes, ['AK3_OP12_OOS16_android14-6.1.',
+                                    'AK3_OP12_OOS16_android14-6.1.118_'])
+        artifacts = [{'id': i, 'name': f'AK3_OP12_OOS16_android14-{version}_ZSU.zip', 'expired': False}
+                     for i, version in enumerate(('6.1.118', '6.1.134'), 1)]
+        def container(url, token):
+            name = artifacts[int(url.split('/')[-2]) - 1]['name']
+            stream = io.BytesIO()
+            with zipfile.ZipFile(stream, 'w') as archive:
+                archive.writestr(name, b'test')
+            return stream.getvalue()
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(downloader, 'list_artifacts', return_value=artifacts), \
+                mock.patch.object(downloader, 'github_bytes', side_effect=container):
+            self.assertEqual(downloader.download_parent('owner/repo', '1', 'token', Path(folder), 2, prefixes), 2)
+
     def test_archive_member_path_is_not_flattened_unsafely(self):
         with self.assertRaises(downloader.DownloadError):
             downloader._archive_member_name('../AK3_escape.zip')

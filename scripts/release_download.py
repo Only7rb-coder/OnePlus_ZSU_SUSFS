@@ -113,14 +113,19 @@ def download_parent(repository, run_id, token, destination, expected_count, arti
         if (not isinstance(artifact_prefixes, list) or len(artifact_prefixes) != expected_count
                 or len(set(artifact_prefixes)) != expected_count
                 or any(not isinstance(prefix, str) or not prefix.startswith('AK3_')
-                       or not prefix.endswith('.') or '/' in prefix for prefix in artifact_prefixes)):
+                       or not prefix.endswith(('.', '_')) or '/' in prefix for prefix in artifact_prefixes)):
             raise DownloadError('Successful artifact prefixes do not match retained count')
         selected = []
-        for prefix in artifact_prefixes:
-            matches = [artifact for artifact in artifacts if artifact['name'].startswith(prefix)]
+        selected_ids = set()
+        # Explicit full-version targets are more specific than the latest
+        # target of the same device/OS. Bind those first, exactly once each.
+        for prefix in sorted(artifact_prefixes, key=len, reverse=True):
+            matches = [artifact for artifact in artifacts if artifact['name'].startswith(prefix)
+                       and artifact['id'] not in selected_ids]
             if len(matches) != 1:
                 raise DownloadError(f'Successful target {prefix} has {len(matches)} artifacts, expected one')
             selected.extend(matches)
+            selected_ids.add(matches[0]['id'])
         skipped = len(artifacts) - len(selected)
         if skipped:
             print(f'Run {run_id}: excluded {skipped} upload(s) without a successful kernel job', flush=True)
