@@ -1009,6 +1009,7 @@ runs:
         # Attempt to apply the patch; enter error handling if it doesn't apply cleanly
         if ! patch -p1 --forward < "$SUSFS_FOLDER/kernel_patches/zsu-common.patch"; then
           echo "Patch reported errors. Checking for known mm/memory.c Hunk #1 context mismatch..."
+          python3 "$GITHUB_WORKSPACE/scripts/repair_susfs_header_rejects.py" .
           
           # If mm/memory.c.rej exists and is caused by the SUSFS macro insertion failure
           if [ -f mm/memory.c.rej ] && grep -q 'CONFIG_KSU_SUSFS_SUS_MAP' mm/memory.c.rej; then
