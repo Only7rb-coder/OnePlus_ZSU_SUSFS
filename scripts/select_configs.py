@@ -9,6 +9,7 @@ import base64
 import json
 import os
 from pathlib import Path
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
@@ -65,11 +66,15 @@ def _github_json(url, token):
             'User-Agent': 'zsu-kernel-retry-selector',
         },
     )
-    try:
-        with urlopen(request, timeout=30) as response:
-            return json.loads(response.read().decode('utf-8'))
-    except (HTTPError, URLError, TimeoutError) as exc:
-        raise ValueError(f'GitHub API request failed: {url}: {exc}') from exc
+    for attempt in range(4):
+        try:
+            with urlopen(request, timeout=30) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except (HTTPError, URLError, TimeoutError) as exc:
+            if attempt == 3 or (isinstance(exc, HTTPError) and exc.code not in {429, 500, 502, 503, 504}):
+                raise ValueError(f'GitHub API request failed: {url}: {exc}') from exc
+            print(f'Transient matrix API failure; retry {attempt + 1}/3', flush=True)
+            time.sleep(2 ** attempt)
 
 
 def _paginated(root_url, token, key):
@@ -151,6 +156,12 @@ def _job_records(api_root, run_id, token, by_name, label):
     return records
 
 
+def _success_prefixes(records):
+    return [f'AK3_{item["model"]}_{item["os_version"]}_{item["android_version"]}-{item["kernel_version"]}.'
+            for entry in records if entry['conclusion'] == 'success'
+            for item in [entry['config']]]
+
+
 def _check_run(repository, run_id, token, api_root, label):
     run = _github_json(f'{api_root}/actions/runs/{run_id}', token)
     if run.get('repository', {}).get('full_name') not in (None, repository):
@@ -207,6 +218,7 @@ def select_retry(root, repository, run_id, token, reuse_runs=''):
             entry['conclusion'] == 'success' for entry in parent_jobs
         ), 'source_pipeline_sha': parent_sha,
         'role': 'retained successful parent builds',
+        'artifact_prefixes': _success_prefixes(parent_jobs),
     }]
     covered = set()
     for reuse_id in reuse_ids:
@@ -228,6 +240,7 @@ def select_retry(root, repository, run_id, token, reuse_runs=''):
             'run_id': str(reuse_id), 'success_count': len(successes),
             'source_pipeline_sha': reuse_sha,
             'role': 'retained successful reusable builds',
+            'artifact_prefixes': _success_prefixes(reuse_jobs),
         })
 
     retry = [entry['config'] for entry in target_entries if entry['key'] not in covered]

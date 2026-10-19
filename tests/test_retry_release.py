@@ -155,6 +155,26 @@ class RetryReleaseTests(unittest.TestCase):
             self.assertEqual(total, 2)
             self.assertEqual((Path(folder) / 'AK3_same.zip').read_bytes(), b'two')
 
+    def test_cancelled_job_upload_is_excluded_by_success_identity(self):
+        good = 'AK3_OP12_OOS14_android14-6.1.57_ZSU_33356_SuSFS_v2.3.0.zip'
+        extra = 'AK3_OP13_OOS15_android15-6.6.89_ZSU_33356_SuSFS_v2.3.0.zip'
+        stream = io.BytesIO()
+        with zipfile.ZipFile(stream, 'w') as archive:
+            archive.writestr(good, b'good')
+        artifacts = [{'id': 1, 'name': good, 'expired': False},
+                     {'id': 2, 'name': extra, 'expired': False}]
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(downloader, 'list_artifacts', return_value=artifacts), \
+                mock.patch.object(downloader, 'github_bytes', return_value=stream.getvalue()) as fetch:
+            count = downloader.download_parent('owner/repo', '1', 'token', Path(folder), 1,
+                                               ['AK3_OP12_OOS14_android14-6.1.'])
+            self.assertEqual(count, 1)
+            self.assertEqual((Path(folder) / good).read_bytes(), b'good')
+            fetch.assert_called_once()
+            with self.assertRaises(downloader.DownloadError):
+                downloader.download_parent('owner/repo', '1', 'token', Path(folder), 1,
+                                           ['AK3_OP15_OOS16_android16-6.12.'])
+
     def test_archive_member_path_is_not_flattened_unsafely(self):
         with self.assertRaises(downloader.DownloadError):
             downloader._archive_member_name('../AK3_escape.zip')

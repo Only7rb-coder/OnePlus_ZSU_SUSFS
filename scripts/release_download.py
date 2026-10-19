@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import shutil
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
@@ -29,11 +30,15 @@ def github_json(url, token):
         'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'zsu-kernel-release-downloader',
     })
-    try:
-        with urlopen(request, timeout=60) as response:
-            return json.loads(response.read().decode('utf-8'))
-    except (HTTPError, URLError, TimeoutError) as exc:
-        raise DownloadError(f'GitHub API request failed: {url}: {exc}') from exc
+    for attempt in range(4):
+        try:
+            with urlopen(request, timeout=60) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except (HTTPError, URLError, TimeoutError) as exc:
+            if attempt == 3 or (isinstance(exc, HTTPError) and exc.code not in {429, 500, 502, 503, 504}):
+                raise DownloadError(f'GitHub API request failed: {url}: {exc}') from exc
+            print(f'Transient GitHub API failure; retry {attempt + 1}/3', flush=True)
+            time.sleep(2 ** attempt)
 
 
 def github_bytes(url, token):
@@ -47,23 +52,26 @@ def github_bytes(url, token):
         'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'zsu-kernel-release-downloader',
     })
-    try:
+    for attempt in range(4):
         try:
-            with build_opener(NoRedirect()).open(request, timeout=180) as response:
-                return response.read()
-        except HTTPError as redirect:
-            if redirect.code not in (301, 302, 303, 307, 308):
-                raise
-            location = redirect.headers.get('Location', '')
-            if urlparse(location).scheme != 'https':
-                raise DownloadError('Artifact API returned a non-HTTPS redirect')
-            # The signed storage URL authenticates itself. Forwarding GH_TOKEN
-            # breaks Azure downloads and needlessly exposes it to the CDN.
-            with urlopen(Request(location, headers={'User-Agent': 'zsu-kernel-release-downloader'}), timeout=180) as response:
-                return response.read()
-    except (HTTPError, URLError, TimeoutError) as exc:
-        status = getattr(exc, 'code', type(exc).__name__)
-        raise DownloadError(f'GitHub artifact download failed: {url}; status={status}') from None
+            try:
+                with build_opener(NoRedirect()).open(request, timeout=180) as response:
+                    return response.read()
+            except HTTPError as redirect:
+                if redirect.code not in (301, 302, 303, 307, 308):
+                    raise
+                location = redirect.headers.get('Location', '')
+                if urlparse(location).scheme != 'https':
+                    raise DownloadError('Artifact API returned a non-HTTPS redirect')
+                # Signed storage URLs authenticate themselves. Never forward GH_TOKEN.
+                with urlopen(Request(location, headers={'User-Agent': 'zsu-kernel-release-downloader'}), timeout=180) as response:
+                    return response.read()
+        except (HTTPError, URLError, TimeoutError) as exc:
+            status = getattr(exc, 'code', type(exc).__name__)
+            if attempt == 3 or (isinstance(exc, HTTPError) and exc.code not in {429, 500, 502, 503, 504}):
+                raise DownloadError(f'GitHub artifact download failed: {url}; status={status}') from None
+            print(f'Transient artifact download failure; retry {attempt + 1}/3', flush=True)
+            time.sleep(2 ** attempt)
 
 
 def list_artifacts(repository, run_id, token):
@@ -91,7 +99,7 @@ def _archive_member_name(name):
     return path.name
 
 
-def download_parent(repository, run_id, token, destination, expected_count):
+def download_parent(repository, run_id, token, destination, expected_count, artifact_prefixes=None):
     if not str(run_id).isdigit():
         raise DownloadError('Parent run ID must be numeric')
     if expected_count < 0:
@@ -101,6 +109,22 @@ def download_parent(repository, run_id, token, destination, expected_count):
                  if isinstance(item.get('name'), str)
                  and item['name'].startswith('AK3_')
                  and item['name'].endswith('.zip')]
+    if artifact_prefixes is not None:
+        if (not isinstance(artifact_prefixes, list) or len(artifact_prefixes) != expected_count
+                or len(set(artifact_prefixes)) != expected_count
+                or any(not isinstance(prefix, str) or not prefix.startswith('AK3_')
+                       or not prefix.endswith('.') or '/' in prefix for prefix in artifact_prefixes)):
+            raise DownloadError('Successful artifact prefixes do not match retained count')
+        selected = []
+        for prefix in artifact_prefixes:
+            matches = [artifact for artifact in artifacts if artifact['name'].startswith(prefix)]
+            if len(matches) != 1:
+                raise DownloadError(f'Successful target {prefix} has {len(matches)} artifacts, expected one')
+            selected.extend(matches)
+        skipped = len(artifacts) - len(selected)
+        if skipped:
+            print(f'Run {run_id}: excluded {skipped} upload(s) without a successful kernel job', flush=True)
+        artifacts = selected
     if len(artifacts) != expected_count:
         raise DownloadError(
             f'Parent run exposes {len(artifacts)} AK3 artifacts, expected {expected_count}'
@@ -151,7 +175,8 @@ def download_runs(repository, runs, token, destination):
         if not isinstance(sha, str) or len(sha) != 40:
             raise DownloadError(f'Invalid source pipeline SHA for retained run {run_id}')
         seen_runs.add(run_id)
-        total += download_parent(repository, run_id, token, destination, expected)
+        total += download_parent(repository, run_id, token, destination, expected,
+                                 record.get('artifact_prefixes'))
     return total
 
 
