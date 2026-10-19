@@ -60,16 +60,58 @@ def main():
     retry_of_run = os.environ.get('RETRY_OF_RUN', '').strip()
     retry_count = int(os.environ.get('RETRY_COUNT', '0'))
     parent_count = int(os.environ.get('PARENT_COUNT', str(count)))
+    retained_json = os.environ.get('RETAINED_RUNS', '').strip()
     if bool(parent_run) != bool(retry_of_run):
         raise SystemExit('Retry provenance requires both PARENT_RUN_ID and RETRY_OF_RUN')
     if retry_of_run and parent_run != retry_of_run:
         raise SystemExit('PARENT_RUN_ID must equal RETRY_OF_RUN')
-    if retry_of_run and (retry_count < 1 or parent_count != count):
+    if retry_of_run and (retry_count < 0 or parent_count != count):
         raise SystemExit('Retry provenance counts do not match the exact release count')
     records = []
-    if parent_run:
-        records.append(_run_record(parent_run, parent_sha, 'retained successful parent builds'))
-    records.append(_run_record(retry_run, retry_sha, 'current build/retry run'))
+    if parent_run and retained_json:
+        try:
+            retained = json.loads(retained_json)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f'Retained run JSON is invalid: {exc}') from exc
+        if not isinstance(retained, list) or not retained:
+            raise SystemExit('Retained run JSON must be a non-empty list')
+        seen = set()
+        retained_total = 0
+        for item in retained:
+            if not isinstance(item, dict):
+                raise SystemExit('Retained run records must be objects')
+            run_id = str(item.get('run_id', ''))
+            success_count = item.get('success_count')
+            source_sha = item.get('source_pipeline_sha')
+            if (not run_id.isdigit() or run_id in seen or
+                    not isinstance(success_count, int) or isinstance(success_count, bool) or
+                    success_count < 0 or not isinstance(source_sha, str) or
+                    len(source_sha) != 40):
+                raise SystemExit('Retained run records have invalid identity or count')
+            seen.add(run_id)
+            retained_total += success_count
+            records.append({
+                'run_id': run_id, 'source_pipeline_sha': source_sha,
+                'role': item.get('role') or 'retained successful builds',
+                'successful_kernel_jobs': success_count,
+            })
+        if records[0]['run_id'] != parent_run or records[0]['source_pipeline_sha'] != parent_sha:
+            raise SystemExit('Retained run list must begin with the retry parent and its head SHA')
+        if retained_total + retry_count != count:
+            raise SystemExit(
+                f'Retained successful jobs ({retained_total}) plus current retry jobs '
+                f'({retry_count}) do not equal release count ({count})'
+            )
+    elif parent_run:
+        records.append({
+            'run_id': parent_run, 'source_pipeline_sha': parent_sha,
+            'role': 'retained successful parent builds',
+            'successful_kernel_jobs': int(os.environ.get('PARENT_SUCCESS_COUNT', '0')),
+        })
+    records.append({
+        'run_id': str(retry_run), 'source_pipeline_sha': retry_sha or None,
+        'role': 'current build/retry run', 'successful_kernel_jobs': retry_count,
+    })
     records = [record for record in records if record]
     lock_digest = hashlib.sha256(
         json.dumps(lock, sort_keys=True, separators=(',', ':')).encode('utf-8')
@@ -84,7 +126,10 @@ def main():
         'retry_of_run': retry_of_run or None,
         'parent_source_pipeline_sha': parent_sha or None,
         'retry_source_pipeline_sha': retry_sha or None,
-        'recursive_retry_supported': False,
+        'retained_successful_kernel_jobs': sum(
+            record.get('successful_kernel_jobs', 0) for record in records[:-1]
+        ),
+        'recursive_retry_supported': bool(parent_run and len(records) > 2),
         'source_lock_sha256': lock_digest,
         'builds': records,
         'archives': [{'name': path.name, 'sha256': digest.split()[0]}
@@ -96,8 +141,8 @@ def main():
         (f'Assembled from {len(zips)} newly compiled device/firmware configurations. '
          'These are not renamed BakaSU binaries.' if not parent_run else
          f'Assembled from {parent_count} configurations: {parent_count - retry_count} '
-         f'retained successful archives from parent run `{parent_run}` and {retry_count} '
-         f'retried archives from run `{retry_run}`. This release does not claim all '
+         f'retained successful archives from compatible prior runs and {retry_count} '
+         f'archives from run `{retry_run}`. This release does not claim all '
          'archives were built in one workflow run or from one pipeline commit.'), '',
         '**Experimental: compile-validated, not hardware boot-tested.** Match the exact model, OS and full kernel/KMI version before flashing. Back up the original boot image and have a working recovery path. This release does not claim all retained device configurations were tested.', '',
         f'Only the regular `{lock["zsu_manager_package"]}` APK signed by the ZSU certificate is accepted as manager. Generic KernelSU, KernelSU-Next, BakaSU, debug-signed and spoofed-package managers are excluded by the certificate/package policy. Root-authorized apps remain able to use granted root privileges.', '',

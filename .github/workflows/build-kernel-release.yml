@@ -11,6 +11,10 @@ on:
         description: 'Completed same-repository run ID; retry only its failed/timed-out kernel jobs'
         type: string
         default: ''
+      reuse_runs:
+        description: 'Comma-separated completed same-repository run IDs whose successful target jobs may be reused (max 8)'
+        type: string
+        default: ''
       selector:
         description: 'Device group when config_path is empty'
         type: choice
@@ -43,7 +47,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: zsu-kernel-${{ github.ref }}-${{ inputs.retry_of_run || inputs.config_path || inputs.selector }}
+  group: zsu-kernel-${{ github.ref }}-${{ inputs.retry_of_run || 'base' }}-${{ inputs.config_path || inputs.selector }}-${{ inputs.reuse_runs || 'none' }}
   cancel-in-progress: false
 
 jobs:
@@ -57,6 +61,9 @@ jobs:
       parent_run_id: ${{ steps.matrix.outputs.parent_run_id }}
       parent_head_sha: ${{ steps.matrix.outputs.parent_head_sha }}
       parent_success_count: ${{ steps.matrix.outputs.parent_success_count }}
+      retained_success_count: ${{ steps.matrix.outputs.retained_success_count }}
+      retained_runs: ${{ steps.matrix.outputs.retained_runs }}
+      release_only: ${{ steps.matrix.outputs.release_only }}
     steps:
       - uses: actions/checkout@v4
       - name: Validate repository contracts
@@ -65,12 +72,17 @@ jobs:
         id: lock
         run: echo "zsu_commit=$(jq -r .zsu_commit sources.lock.json)" >> "$GITHUB_OUTPUT"
       - name: Validate aggregate retry release contract
-        if: ${{ inputs.retry_of_run != '' && inputs.make_release }}
+        if: ${{ (inputs.retry_of_run != '' || inputs.reuse_runs != '') && inputs.make_release }}
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           if [ "$RELEASE_TAG" != 'v2.3.0-zsu-all-r1' ]; then
             echo '::error::Aggregate retries must publish v2.3.0-zsu-all-r1'
+            exit 1
+          fi
+          if [ "$PRERELEASE" != 'true' ]; then
+            echo '::error::Aggregate retry publication must remain a prerelease'
             exit 1
           fi
       - name: Select exact device configurations
@@ -79,6 +91,7 @@ jobs:
           CONFIG_PATH: ${{ inputs.config_path }}
           SELECTOR: ${{ inputs.selector }}
           RETRY_OF_RUN: ${{ inputs.retry_of_run }}
+          REUSE_RUNS: ${{ inputs.reuse_runs }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/select_configs.py
@@ -89,7 +102,7 @@ jobs:
     timeout-minutes: 150
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 12
       matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     name: ${{ matrix.model }} / ${{ matrix.os_version }} / ${{ matrix.kernel_version }}
     env:
@@ -157,7 +170,7 @@ jobs:
 
   release:
     needs: [prepare, build]
-    if: ${{ inputs.make_release && needs.build.result == 'success' }}
+    if: ${{ always() && inputs.make_release && (needs.build.result == 'success' || needs.prepare.outputs.release_only == 'true') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -171,30 +184,32 @@ jobs:
       RETRY_COUNT: ${{ needs.prepare.outputs.retry_count }}
       PARENT_RUN_ID: ${{ needs.prepare.outputs.parent_run_id }}
       PARENT_HEAD_SHA: ${{ needs.prepare.outputs.parent_head_sha }}
+      PARENT_SUCCESS_COUNT: ${{ needs.prepare.outputs.parent_success_count }}
       PARENT_COUNT: ${{ needs.prepare.outputs.count }}
+      RETAINED_SUCCESS_COUNT: ${{ needs.prepare.outputs.retained_success_count }}
+      RETAINED_RUNS: ${{ needs.prepare.outputs.retained_runs }}
     steps:
       - uses: actions/checkout@v4
       - name: Create clean release assembly directories
-        run: rm -rf release-assets parent-assets retry-assets && mkdir -p release-assets
-      - name: Download successful archives retained by parent run
-        if: ${{ inputs.retry_of_run != '' && needs.prepare.outputs.parent_success_count != '0' }}
+        run: rm -rf release-assets retry-assets && mkdir -p release-assets
+      - name: Download successful archives retained by parent and reusable runs
+        if: ${{ inputs.retry_of_run != '' && needs.prepare.outputs.retained_success_count != '0' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/release_download.py \
-            --run-id "$PARENT_RUN_ID" \
-            --destination parent-assets \
-            --expected-count "${{ needs.prepare.outputs.parent_success_count }}"
-          find parent-assets -type f -name 'AK3_*.zip' -exec mv -f {} release-assets/ \;
+            --runs-json "$RETAINED_RUNS" \
+            --destination release-assets \
+            --expected-count "$RETAINED_SUCCESS_COUNT"
       - name: Download archives from this retry matrix
-        if: ${{ inputs.retry_of_run != '' }}
+        if: ${{ inputs.retry_of_run != '' && needs.prepare.outputs.retry_count != '0' }}
         uses: actions/download-artifact@v4
         with:
           pattern: AK3_*
           path: retry-assets
           merge-multiple: true
       - name: Flatten retry archives over retained archives
-        if: ${{ inputs.retry_of_run != '' }}
+        if: ${{ inputs.retry_of_run != '' && needs.prepare.outputs.retry_count != '0' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

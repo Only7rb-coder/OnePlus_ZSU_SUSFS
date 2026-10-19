@@ -78,8 +78,8 @@ def _archive_member_name(name):
 def download_parent(repository, run_id, token, destination, expected_count):
     if not str(run_id).isdigit():
         raise DownloadError('Parent run ID must be numeric')
-    if expected_count < 1:
-        raise DownloadError('Expected retained artifact count must be positive')
+    if expected_count < 0:
+        raise DownloadError('Expected retained artifact count cannot be negative')
     destination.mkdir(parents=True, exist_ok=True)
     artifacts = [item for item in list_artifacts(repository, run_id, token)
                  if isinstance(item.get('name'), str)
@@ -116,6 +116,29 @@ def download_parent(repository, run_id, token, destination, expected_count):
     return len(seen)
 
 
+def download_runs(repository, runs, token, destination):
+    """Download retained runs oldest-first; later compatible runs replace names."""
+    if not isinstance(runs, list) or not runs:
+        raise DownloadError('retained run list must be a non-empty JSON array')
+    seen_runs = set()
+    total = 0
+    for record in runs:
+        if not isinstance(record, dict):
+            raise DownloadError('retained run record must be an object')
+        run_id = str(record.get('run_id', ''))
+        if not run_id.isdigit() or run_id in seen_runs:
+            raise DownloadError(f'Invalid or duplicate retained run ID: {run_id!r}')
+        expected = record.get('success_count')
+        sha = record.get('source_pipeline_sha')
+        if not isinstance(expected, int) or isinstance(expected, bool) or expected < 0:
+            raise DownloadError(f'Invalid successful-job count for retained run {run_id}')
+        if not isinstance(sha, str) or len(sha) != 40:
+            raise DownloadError(f'Invalid source pipeline SHA for retained run {run_id}')
+        seen_runs.add(run_id)
+        total += download_parent(repository, run_id, token, destination, expected)
+    return total
+
+
 def flatten_local(source, destination, expected_count):
     if not source.is_dir():
         raise DownloadError(f'Current-run artifact directory does not exist: {source}')
@@ -144,12 +167,19 @@ def main():
     parser.add_argument('--token', default=os.environ.get('GH_TOKEN', ''))
     parser.add_argument('--destination', type=Path, required=True)
     parser.add_argument('--expected-count', type=int, required=True)
+    parser.add_argument('--runs-json', help='JSON retained run list from prepare outputs')
     parser.add_argument('--flatten-from', type=Path,
                         help='Flatten current-run AK3 artifacts instead of using the API')
     args = parser.parse_args()
     if not args.repository or not args.token:
         parser.error('repository and token are required')
-    if args.flatten_from:
+    if args.runs_json:
+        try:
+            runs = json.loads(args.runs_json)
+        except json.JSONDecodeError as exc:
+            parser.error(f'--runs-json is not valid JSON: {exc}')
+        count = download_runs(args.repository, runs, args.token, args.destination)
+    elif args.flatten_from:
         count = flatten_local(args.flatten_from, args.destination, args.expected_count)
     else:
         if not args.run_id:
