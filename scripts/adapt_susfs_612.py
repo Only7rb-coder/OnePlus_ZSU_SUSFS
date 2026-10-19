@@ -19,21 +19,48 @@ import subprocess
 import tempfile
 
 PROFILES = {
-    # repo/ref: OnePlusOSS/android_kernel_oneplus_mt6993,
-    # oneplus/mt6993_b_16.0_ace_6_ultra
     "2e3b6d890bd2c7bd5779bef6df6e16e2c972b87c": {
         "name": "OP-ACE-6-ULTRA",
         "exec": "2c0f1edc537abe68111e36a3e4ffb1b8fc57607ed8f216acfa1f621784817dd5",
-        "task": "4f1a6936a32f104f2d685b190a60ac14cb27d1e6709b758110022baef8ac8773",
+        "task": "4f1a6936a32f104f2d685b190a60ac14cb27d1e6709b758110022baef8ac8773"
     },
-    # repo/ref: OnePlusOSS/android_kernel_common_oneplus_sm8845,
-    # oneplus/sm8845_b_16.0.0_ace_6t
     "c1102892bf2eb5806e135f5169b3dcfd72f96c47": {
         "name": "OP-ACE-6T",
         "exec": "2c8828653f872f7925d962bfc41042e9133d87638f45eb9859702cc43dcd61bd",
-        "task": "38f94fbe5113b6af0cdd31ebb9a8896fd9b756a8a64ddaac487936601c1ee053",
+        "task": "38f94fbe5113b6af0cdd31ebb9a8896fd9b756a8a64ddaac487936601c1ee053"
     },
+    "6d16e5c7628c17cce37f03cad3bcb3bbece9d3fc": {
+        "name": "OP-PAD-3-PRO",
+        "exec": "2c0f1edc537abe68111e36a3e4ffb1b8fc57607ed8f216acfa1f621784817dd5",
+        "task": "4f1a6936a32f104f2d685b190a60ac14cb27d1e6709b758110022baef8ac8773"
+    },
+    "ac8930c8c601fb5967d7fc4357229605053b0f27": {
+        "name": "OP-PAD-4",
+        "exec": "2c0f1edc537abe68111e36a3e4ffb1b8fc57607ed8f216acfa1f621784817dd5",
+        "task": "4f1a6936a32f104f2d685b190a60ac14cb27d1e6709b758110022baef8ac8773"
+    },
+    "3e2d8bed50e92a7c48af934b17bdd013d4fadfc0": {
+        "name": "OP-PAD-LITE",
+        "exec": "2c8828653f872f7925d962bfc41042e9133d87638f45eb9859702cc43dcd61bd",
+        "task": "0c913a2eb7a282c98f3c97125e1093931772e71fd153cef1785dd303f995cb4d"
+    },
+    "d9053b907db4bb5da938e9cf947d0ae32302ceaf": {
+        "name": "OP15",
+        "exec": "2c8828653f872f7925d962bfc41042e9133d87638f45eb9859702cc43dcd61bd",
+        "task": "0c913a2eb7a282c98f3c97125e1093931772e71fd153cef1785dd303f995cb4d"
+    },
+    "150cab866c6632d4b38d7cc323169b2fd9c9660d": {
+        "name": "OP15T",
+        "exec": "2c8828653f872f7925d962bfc41042e9133d87638f45eb9859702cc43dcd61bd",
+        "task": "38f94fbe5113b6af0cdd31ebb9a8896fd9b756a8a64ddaac487936601c1ee053"
+    },
+    "2eeabf09aa84e35236fdb82aba9b59b18b04ff9c": {
+        "name": "OP15r",
+        "exec": "2c8828653f872f7925d962bfc41042e9133d87638f45eb9859702cc43dcd61bd",
+        "task": "38f94fbe5113b6af0cdd31ebb9a8896fd9b756a8a64ddaac487936601c1ee053"
+    }
 }
+
 SOURCE_COMMIT = next(iter(PROFILES))
 # This is the SHA-256 of the complete filtered task_mmu section (headers and
 # hunks, excluding the following file).  It pins the approved archive input.
