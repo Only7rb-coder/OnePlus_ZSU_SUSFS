@@ -10,6 +10,16 @@ def run(*args, cwd=None):
     return subprocess.run(args, cwd=cwd, check=True, text=True, capture_output=False)
 
 
+def kbuild_include_flags(repo):
+    kernel = (repo / 'kernel').resolve(strict=True)
+    if any(character.isspace() for character in str(kernel)):
+        raise ValueError('Kernel include path contains unsupported whitespace')
+    # 6.12's src already contains the source-tree prefix. ZSU's older
+    # $(srctree)/$(src) expression doubles it for in-tree subdirectories.
+    return ('\n# Physical source includes for out-of-tree object directories.\n'
+            f'ccflags-y += -I{kernel} -I{kernel / "include"}\n')
+
+
 def link_kernel(common, repo):
     drivers = common.resolve(strict=True) / 'drivers'
     link = drivers / 'kernelsu'
@@ -64,6 +74,8 @@ KSU_NEXT_MANAGER_HASH := {lock['manager_certificate_sha256']}
             raise SystemExit('Missing audited ZSU SUSFS bridge; refusing to produce mislabeled artifacts')
         run('git', 'apply', '--check', str(patch), cwd=repo)
         run('git', 'apply', str(patch), cwd=repo)
+    with kbuild.open('a') as stream:
+        stream.write(kbuild_include_flags(repo))
     drivers = link_kernel(common, repo)
     for file, entry in [
         (drivers / 'Makefile', 'obj-$(CONFIG_KSU) += kernelsu/'),
