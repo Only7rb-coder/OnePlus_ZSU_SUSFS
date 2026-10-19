@@ -98,6 +98,7 @@ jobs:
 
   build:
     needs: prepare
+    if: ${{ needs.prepare.outputs.release_only != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 150
     strategy:
