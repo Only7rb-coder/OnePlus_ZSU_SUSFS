@@ -38,7 +38,7 @@ def github_json(url, token):
 
 def github_bytes(url, token):
     request = Request(url, headers={
-        'Accept': 'application/octet-stream',
+        'Accept': 'application/vnd.github+json',
         'Authorization': f'Bearer {token}',
         'X-GitHub-Api-Version': '2022-11-28',
         'User-Agent': 'zsu-kernel-release-downloader',
