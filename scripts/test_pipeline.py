@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Fast, offline build contract tests; not a substitute for device boot tests."""
 import importlib.util
+import hashlib
 import json
 from pathlib import Path
 import re
+import tarfile
 import tempfile
 import unittest
 import zipfile
@@ -146,7 +148,54 @@ class PipelineTests(unittest.TestCase):
     def test_bridge_present(self):
         patch = ROOT / 'patches/zsu-susfs-v2.3.0.patch'
         self.assertTrue(patch.is_file(), 'SUSFS bridge must be implemented before building')
-        self.assertIn('CONFIG_KSU_SUSFS', patch.read_text())
+        text = patch.read_text()
+        self.assertIn('CONFIG_KSU_SUSFS', text)
+        self.assertIn('CMD_SUSFS_SET_PRIORITY_UID_FILTER', text)
+        self.assertIn('susfs_set_priority_uid_filter(arg);', text)
+        self.assertIn('kernel/manager/pkg_observer.c', text)
+        self.assertIn('susfs_parse_priority_app_strings();', text)
+
+    def test_priority_uid_filter_is_pinned_for_every_kernel_family(self):
+        lock = json.loads((ROOT / 'sources.lock.json').read_text())
+        self.assertEqual(set(lock['susfs_commits']), {
+            'android12-5.10', 'android13-5.15', 'android14-6.1',
+            'android15-6.6', 'android16-6.12',
+        })
+        self.assertEqual(set(lock['susfs_archive_sha256']), set(lock['susfs_commits'].values()))
+        for family, commit in lock['susfs_commits'].items():
+            archive_path = ROOT / 'vendor/susfs-archives' / f'susfs4ksu-{commit}.tar.gz'
+            self.assertTrue(archive_path.is_file(), f'missing archive for {family}')
+            self.assertEqual(
+                hashlib.sha256(archive_path.read_bytes()).hexdigest(),
+                lock['susfs_archive_sha256'][commit],
+            )
+            with tarfile.open(archive_path, 'r:gz') as archive:
+                names = archive.getnames()
+                kernel_patch = next(
+                    name for name in names
+                    if name.endswith(f'/kernel_patches/50_add_susfs_in_gki-{family}.patch')
+                )
+                ksu_patch = next(
+                    name for name in names
+                    if name.endswith('/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch')
+                )
+                susfs_source = next(
+                    name for name in names if name.endswith('/kernel_patches/fs/susfs.c')
+                )
+                header = next(
+                    name for name in names
+                    if name.endswith('/kernel_patches/include/linux/susfs.h')
+                )
+                kernel_text = archive.extractfile(kernel_patch).read().decode()
+                ksu_text = archive.extractfile(ksu_patch).read().decode()
+                susfs_text = archive.extractfile(susfs_source).read().decode()
+                header_text = archive.extractfile(header).read().decode()
+                self.assertIn('susfs_is_priority_uid_filtered', kernel_text, family)
+                self.assertIn('CMD_SUSFS_SET_PRIORITY_UID_FILTER', ksu_text, family)
+                self.assertIn('susfs_parse_priority_app_strings', ksu_text, family)
+                self.assertIn('susfs_set_priority_uid_filter', susfs_text, family)
+                self.assertIn('SUSFS_VERSION "v2.3.0"', header_text, family)
+                self.assertTrue(any(name.endswith('/LICENSE') for name in names), family)
 
 
 if __name__ == '__main__':

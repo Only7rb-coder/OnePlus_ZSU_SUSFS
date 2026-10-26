@@ -27,7 +27,7 @@ on:
       release_tag:
         description: 'New release tag; never overwrites an existing release'
         type: string
-        default: 'v2.3.0-zsu-all-r1'
+        default: 'v2.3.0-zsu-all-r2'
       prerelease:
         description: 'Experimental / not hardware boot-tested (keep true for initial builds)'
         type: boolean
@@ -77,8 +77,8 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          if [ "$RELEASE_TAG" != 'v2.3.0-zsu-all-r1' ]; then
-            echo '::error::Aggregate retries must publish v2.3.0-zsu-all-r1'
+          if [ "$RELEASE_TAG" != 'v2.3.0-zsu-all-r2' ]; then
+            echo '::error::Aggregate retries must publish v2.3.0-zsu-all-r2'
             exit 1
           fi
           if [ "$PRERELEASE" != 'true' ]; then
