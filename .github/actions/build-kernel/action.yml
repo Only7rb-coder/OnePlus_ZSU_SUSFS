@@ -1220,6 +1220,18 @@ runs:
         set -euo pipefail
         echo "::group::Apply Other patches"
         cd "$COMMON_KERNEL_FOLDER"
+        if [ "$OP_MODEL" = "OP-N6" ] && [ "$OP_OS_VERSION" = "OOS16" ] && [ "$KERNEL_VER" = "5.15" ]; then
+          # The upstream N6 wl2868c module references get_PCB_Version(), but
+          # this branch does not provide/export that symbol. Keep the
+          # regulator enabled while retaining the safe PVT1 OCP behavior.
+          wl2868c_source="drivers/regulator/wl2868c-regulator.c"
+          if ! grep -qF 'version = get_PCB_Version();' "$wl2868c_source"; then
+            echo "::error::Expected OP-N6 wl2868c get_PCB_Version call was not found"
+            exit 1
+          fi
+          sed -i 's/version = get_PCB_Version();/version = PCB_VERSION_PVT1;/' "$wl2868c_source"
+          echo "Applied OP-N6 wl2868c get_PCB_Version compatibility fix"
+        fi
         KERNEL_VERSION="${{ env.KERNEL_VER }}"
         MIN_VERSION="5.16"
         if [ "$(printf '%s\n' "$KERNEL_VERSION" "$MIN_VERSION" | sort -V | head -n1)" = "$KERNEL_VERSION" ]; then
