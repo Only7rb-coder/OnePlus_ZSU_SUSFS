@@ -179,7 +179,7 @@ new file mode 100644
 index 0000000..eb8b232
 --- /dev/null
 +++ b/kernel/susfs/compat.c
-@@ -0,0 +1,138 @@
+@@ -0,0 +1,141 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +#include <linux/errno.h>
 +#include <linux/cred.h>

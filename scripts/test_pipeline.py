@@ -154,6 +154,12 @@ class PipelineTests(unittest.TestCase):
         self.assertIn('susfs_set_priority_uid_filter(arg);', text)
         self.assertIn('kernel/manager/pkg_observer.c', text)
         self.assertIn('susfs_parse_priority_app_strings();', text)
+        compat = text.split('diff --git a/kernel/susfs/compat.c', 1)[1].split('diff --git', 1)[0]
+        match = re.search(r'@@ -0,0 \+1,(\d+) @@\n', compat)
+        self.assertIsNotNone(match, 'compat.c must have a valid new-file hunk')
+        additions = [line for line in compat.split(match.group(0), 1)[1].splitlines()
+                     if line.startswith('+') and not line.startswith('+++')]
+        self.assertEqual(int(match.group(1)), len(additions), 'compat.c hunk must not truncate source')
 
     def test_priority_uid_filter_is_pinned_for_every_kernel_family(self):
         lock = json.loads((ROOT / 'sources.lock.json').read_text())
